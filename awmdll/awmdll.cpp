@@ -2206,10 +2206,10 @@ int HookFunctions() {
     if (rv) {
         return ERR_FH_INIT;
     }
-    rv = funchook_prepare(funchook, (void**)&CTLW_UpdateColorizationColor_orig, CTLW_UpdateColorizationColor_Hook);
+/*     rv = funchook_prepare(funchook, (void**)&CTLW_UpdateColorizationColor_orig, CTLW_UpdateColorizationColor_Hook);
     if (rv) {
         return ERR_FH_INIT;
-    }
+    } */
     rv = funchook_prepare(funchook, (void**)&CTLW_UpdateNCAreaBackground_orig, CTLW_UpdateNCAreaBackground_Hook);
     if (rv) {
         return ERR_FH_INIT;
