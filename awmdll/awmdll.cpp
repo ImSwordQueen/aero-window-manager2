@@ -2226,10 +2226,10 @@ int HookFunctions() {
     if (rv) {
         return ERR_FH_INIT;
     }
-    rv = funchook_prepare(funchook, (void**)&CText_SetBackgroundColor_orig, CText_SetBackgroundColor_Hook);
+/*     rv = funchook_prepare(funchook, (void**)&CText_SetBackgroundColor_orig, CText_SetBackgroundColor_Hook);
     if (rv) {
         return ERR_FH_INIT;
-    }
+    } */
     rv = funchook_prepare(funchook, (void**)&CTLW_UpdateWindowVisuals_orig, CTLW_UpdateWindowVisuals_Hook);
     if (rv) {
         return ERR_FH_INIT;
