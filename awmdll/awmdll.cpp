@@ -574,12 +574,6 @@ CVis_SetDirtyFlags_t CVisual_SetDirtyFlags;
 typedef __int64 (*CTLW_UpdatePinnedParts_t)(void* pThis);
 CTLW_UpdatePinnedParts_t CTopLevelWindow_UpdatePinnedParts;
 
-typedef __int64 (*CTLW_UpdateColorizationColor_t)(void* pThis);
-CTLW_UpdateColorizationColor_t CTLW_UpdateColorizationColor_orig;
-
-typedef __int64 (*CTLW_UpdateNCAreaBackground_t)(void* pThis);
-CTLW_UpdateNCAreaBackground_t CTLW_UpdateNCAreaBackground_orig;
-
 typedef __int64 (*CSCLMBP_Update_t)(void* pThis, double alpha, D3DCOLORVALUE* color);
 CSCLMBP_Update_t CSolidColorMilBrushProxy_Update;
 
@@ -997,136 +991,6 @@ __int64 CTLW_ValidateVisual_Hook(BYTE* pThis) { // TO BE OVERHAULED ONCE/IF VALI
         }
     }
 #endif
-    return rv;
-}
-
-__int64 CTLW_UpdateColorizationColor_Hook(BYTE* pThis) {
-    __int64 rv = CTLW_UpdateColorizationColor_orig(pThis);
-    int balanceColor = 224;
-    int balClrPremulActive = balanceColor * (1.0 - awmsettings.colorBalanceActive);
-    int balClrPremulInactive = balanceColor * (1.0 - awmsettings.colorBalanceInactive);
-    BYTE* titlebarGlassColor = *(BYTE**)(pThis + CTLW_GlassColorTB);
-    BYTE* borderGlassColor = *(BYTE**)(pThis + CTLW_GlassColorBorder);
-    D3DCOLORVALUE* tbGlass3DColor = (D3DCOLORVALUE*)(titlebarGlassColor + CGCR_Color);
-    D3DCOLORVALUE* borGlass3DColor = (D3DCOLORVALUE*)(borderGlassColor + CGCR_Color);
-    D3DCOLORVALUE colorization = { 0 };
-
-    bool isActive = CTLW_TreatAsActiveWindow_orig(pThis);
-    if (awmsettings.useTransparency) {
-        if (isActive) {
-            colorization.r = AWM_Convert_sRGB_to_scRGB[awmsettings.colorActiveR] / 255;
-            colorization.g = AWM_Convert_sRGB_to_scRGB[awmsettings.colorActiveG] / 255;
-            colorization.b = AWM_Convert_sRGB_to_scRGB[awmsettings.colorActiveB] / 255;
-            colorization.a = awmsettings.colorBalanceActive;
-        }
-        else {
-            colorization.r = AWM_Convert_sRGB_to_scRGB[awmsettings.colorInactiveR] / 255;
-            colorization.g = AWM_Convert_sRGB_to_scRGB[awmsettings.colorInactiveG] / 255;
-            colorization.b = AWM_Convert_sRGB_to_scRGB[awmsettings.colorInactiveB] / 255;
-            colorization.a = awmsettings.colorBalanceInactive;
-        }
-    }
-    else {
-        if (isActive) {
-            colorization.r = AWM_Convert_sRGB_to_scRGB[(int)floor(awmsettings.colorActiveR * awmsettings.colorBalanceActive + balClrPremulActive)] / 255;
-            colorization.g = AWM_Convert_sRGB_to_scRGB[(int)floor(awmsettings.colorActiveG * awmsettings.colorBalanceActive + balClrPremulActive)] / 255;
-            colorization.b = AWM_Convert_sRGB_to_scRGB[(int)floor(awmsettings.colorActiveB * awmsettings.colorBalanceActive + balClrPremulActive)] / 255;
-            colorization.a = 1.0;
-        }
-        else {
-            colorization.r = AWM_Convert_sRGB_to_scRGB[(int)floor(awmsettings.colorInactiveR * awmsettings.colorBalanceInactive + balClrPremulInactive)] / 255;
-            colorization.g = AWM_Convert_sRGB_to_scRGB[(int)floor(awmsettings.colorInactiveG * awmsettings.colorBalanceInactive + balClrPremulInactive)] / 255;
-            colorization.b = AWM_Convert_sRGB_to_scRGB[(int)floor(awmsettings.colorInactiveB * awmsettings.colorBalanceInactive + balClrPremulInactive)] / 255;
-            colorization.a = 1.0;
-        }
-    }
-    *tbGlass3DColor = colorization;
-    *borGlass3DColor = colorization;
-    /*fprintf(stream, "%f\n", colorization.r);
-    fprintf(stream, "%f\n", colorization.g);
-    fprintf(stream, "%f\n", colorization.b);
-    fprintf(stream, "%f\n", colorization.a);*/
-    return rv;
-}
-
-__int64 CTLW_UpdateNCAreaBackground_Hook(BYTE* pThis) {
-    int rv = CTLW_UpdateNCAreaBackground_orig(pThis);
-    D3DCOLORVALUE color = { 0 };
-    BYTE* borderBrushProxy = *(BYTE**)(pThis + CTLW_BorderBrushProxy);
-    BYTE* titlebarBrushProxy = *(BYTE**)(pThis + CTLW_TitlebarBrushProxy);
-    BYTE* windowData  = *(BYTE**)(pThis + CTLW_WindowData);
-
-    if (borderBrushProxy) {
-        BYTE* colorizationResources = NULL;
-        if (CTopLevelWindow_IsSheetOfGlass(pThis)) {
-            colorizationResources = *(BYTE**)(pThis + CTLW_GlassColorTB);
-        }
-        else {
-            colorizationResources = *(BYTE**)(pThis + CTLW_GlassColorBorder);
-        }
-        D3DCOLORVALUE colorResource = *(D3DCOLORVALUE*)(colorizationResources + CGCR_Color);
-        D3DCOLORVALUE* borClr = (D3DCOLORVALUE*)(pThis + CTLW_BorderColor);
-        color.r = colorResource.r;
-        color.g = colorResource.g;
-        color.b = colorResource.b;
-        color.a = colorResource.a;
-        //if (borClr->r != color.r || borClr->g != color.g || borClr->b != color.b || borClr->a != color.a) {
-#if TARGETBUILD == 19041 || TARGETBUILD == 18362
-        CSolidColorMilBrushProxy_Update(borderBrushProxy, 1.0, &color);
-#elif TARGETBUILD == 17763
-        CChannel_SolidColorLegacyMilBrushUpdate(
-            *(CChannel**)(borderBrushProxy + 16),
-            *(int*)(borderBrushProxy + 24),
-            1.0,
-            &color,
-            0,
-            0,
-            0
-        );
-#endif
-        *borClr = color;
-        //}
-
-        // This method will be replaced eventually, due to the slowdowns it causes
-        // Disabling transparency effects removes the slowdowns
-        ACCENT_POLICY* pAccentPolicy = (ACCENT_POLICY*)(windowData + CWD_AccentPolicy);
-        if (pAccentPolicy->nAccentState != awmsettings.accent) {
-            pAccentPolicy->nAccentState = awmsettings.accent;
-            //pAccentPolicy->nFlags = ACCENT_USEGEOMETRY;
-            pAccentPolicy->nColor = 0;
-            if (pAccentPolicy->nAccentState == ACCENT_ENABLE_ACRYLICBLURBEHIND)
-                pAccentPolicy->nColor = 0x01000000;
-            CTopLevelWindow_OnAccentPolicyUpdated(pThis);
-        }
-
-    }
-    if (titlebarBrushProxy) {
-        BYTE* colorizationResources = *(BYTE**)(pThis + CTLW_GlassColorTB);
-        D3DCOLORVALUE colorResource = *(D3DCOLORVALUE*)(colorizationResources + CGCR_Color);
-        D3DCOLORVALUE* tbClr = (D3DCOLORVALUE*)(pThis + CTLW_TitlebarColor);
-        color.r = colorResource.r;
-        color.g = colorResource.g;
-        color.b = colorResource.b;
-        color.a = colorResource.a;
-        //if (tbClr->r != color.r || tbClr->g != color.g || tbClr->b != color.b || tbClr->a != color.a) {
-#if TARGETBUILD == 19041 || TARGETBUILD == 18362
-        CSolidColorMilBrushProxy_Update(titlebarBrushProxy, 1.0, &color);
-#elif TARGETBUILD == 17763
-        CChannel_SolidColorLegacyMilBrushUpdate(
-            *(CChannel**)(titlebarBrushProxy + 16), 
-            *(int*)(titlebarBrushProxy + 24),
-            1.0,
-            &color,
-            0,
-            0,
-            0
-        );
-#endif
-        *tbClr = color;
-        //}
-        // move some of these into their own function, same with above
-    }
-
     return rv;
 }
 
@@ -2073,16 +1937,6 @@ int HookFunctions() {
         (uintptr_t)addresses[3]
         );
 
-    CTLW_UpdateColorizationColor_orig = (CTLW_UpdateColorizationColor_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[4]
-        );
-
-    CTLW_UpdateNCAreaBackground_orig = (CTLW_UpdateNCAreaBackground_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[5]
-        );
-
     CSolidColorMilBrushProxy_Update = (CSCLMBP_Update_t)(
         (uintptr_t)hudwm +
         (uintptr_t)addresses[6]
@@ -2206,14 +2060,6 @@ int HookFunctions() {
     if (rv) {
         return ERR_FH_INIT;
     }
-/*     rv = funchook_prepare(funchook, (void**)&CTLW_UpdateColorizationColor_orig, CTLW_UpdateColorizationColor_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    } */
-/*     rv = funchook_prepare(funchook, (void**)&CTLW_UpdateNCAreaBackground_orig, CTLW_UpdateNCAreaBackground_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    } */
     rv = funchook_prepare(funchook, (void**)&CText_ValidateResources_orig, CText_ValidateResources_Hook);
     if (rv) {
         return ERR_FH_INIT;
