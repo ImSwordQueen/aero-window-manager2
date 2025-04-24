@@ -65,26 +65,17 @@ LPCWSTR symNames[SYMBOLS_AMOUNT] = {
     CTLW_ValidateVisual_Name,
     CTLW_s_marMinInflationThickness_Name,
     CDM_s_pDesktopManagerInstance_Name,
-    CText_ValidateResources_Name,
     CBmpSrc_Create_WICBitmap_Name,
     CDII_Create_Name,
     CRDV_AddInstruction_Name,
-    CText_ReleaseResources_Name,
     CBaseObject_Release_Name,
     CCompositor_CreateMatrixTransformProxy_Name,
     CPushTransformInstruction_Create_Name,
     CPopInstruction_Create_Name,
-    CText_CText_Name,
-    CText_SetColor_Name,
-    CText_SetBackgroundColor_Name,
     CTLW_UpdateWindowVisuals_Name,
-    CText_InitializeVisualTreeClone_Name,
-    CText_Destroy_Name,
     CDesktopManager_LoadTheme_Name,
     CDesktopManager_UnloadTheme_Name,
     CButton_SetVisualStates_Name,
-    CText_SetText_Name,
-    CText_SetFont_Name
 };
 
 #if TARGETBUILD == 19041 || TARGETBUILD == 18362
@@ -592,8 +583,6 @@ SetWindowRgnEx_t SetWindowRgnEx;
 typedef __int64 (*CRD_DrawSolidColorRectangle_t)(void* pThis, void* pDrawingContext, void* pDrawListEntryBuilder, char unk, MilRectF* rect, D3DCOLORVALUE* color);
 CRD_DrawSolidColorRectangle_t CRD_DrawSolidColorRectangle_orig;
 
-typedef int (*CText_ValidateResources_t)(CText* pThis);
-CText_ValidateResources_t CText_ValidateResources_orig;
 #if TARGETBUILD == 19041 || TARGETBUILD == 18362
 typedef int (*CBitmapSource_Create_t)(IWICBitmap* bitmap, MARGINS* margins, CBitmapSource** ppBitmapSource);
 #elif TARGETBUILD == 17763
@@ -606,9 +595,6 @@ CDrawImageInstruction_Create_t CDrawImageInstruction_Create;
 
 typedef int (*CRenderDataVisual_AddInstruction_t)(CRenderDataVisual* pThis, CRenderDataInstruction* pInstruction);
 CRenderDataVisual_AddInstruction_t CRenderDataVisual_AddInstruction;
-
-typedef int (*CText_ReleaseResources_t)(CText* pThis);
-CText_ReleaseResources_t CText_ReleaseResources;
 
 typedef int (*CBaseObject_Release_t)(CBaseObject* pThis);
 CBaseObject_Release_t CBaseObject_Release;
@@ -625,23 +611,8 @@ CPopInstruction_Create_t CPopInstruction_Create;
 typedef int (*CCh_SolidColorLegacyMilBrushUpdate_t)(CChannel* pThis, int, double opacity, D3DCOLORVALUE*, UINT, UINT, UINT);
 CCh_SolidColorLegacyMilBrushUpdate_t CChannel_SolidColorLegacyMilBrushUpdate;
 
-typedef CText* (*CText_CText_t)(CText* pThis);
-CText_CText_t CText_CText_orig;
-
-typedef void (*CText_SetColor_t)(CText* pThis, COLORREF color);
-CText_SetColor_t CText_SetColor_orig;
-
-typedef void (*CText_SetBackgroundColor_t)(CText* pThis, COLORREF color);
-CText_SetBackgroundColor_t CText_SetBackgroundColor_orig;
-
 typedef int (*CTLW_UpdateWindowVisuals_t)(CTopLevelWindow* pThis);
 CTLW_UpdateWindowVisuals_t CTLW_UpdateWindowVisuals_orig;
-
-typedef int (*CText_InitializeVisualTreeClone_t)(CText* pThis, CText* pNew, UINT options);
-CText_InitializeVisualTreeClone_t CText_InitializeVisualTreeClone_orig;
-
-typedef CText* (*CText_Destroy_t)(CText* pThis, UINT someFlags);
-CText_Destroy_t CText_Destroy_orig;
 
 typedef long (*CDesktopManager_LoadTheme_t)(CDesktopManager* pThis);
 CDesktopManager_LoadTheme_t CDesktopManager_LoadTheme_orig;
@@ -651,12 +622,6 @@ CDesktopManager_UnloadTheme_t CDesktopManager_UnloadTheme_orig;
 
 typedef long (*CButton_SetVisualStates_t)(CButton* pThis, CBitmapSourceArray* array1, CBitmapSourceArray* array2, CBitmapSource* bmpsrc, float opacity);
 CButton_SetVisualStates_t CButton_SetVisualStates_orig;
-
-typedef long (*CText_SetText_t)(CText* pThis, wchar_t* str);
-CText_SetText_t CText_SetText_orig;
-
-typedef void (*CText_SetFont_t)(CText* pThis, LOGFONTW* font);
-CText_SetFont_t CText_SetFont_orig;
 
 // ===========================================================================
 //  FUNCTIONS
@@ -759,114 +724,6 @@ bool CTopLevelWindow_IsSheetOfGlass(BYTE* pThis) {
         && *(int*)(windowVisual + 84) == 0x7fffffff
         && *(int*)(windowVisual + 88) == 0x7fffffff
         && *(int*)(windowVisual + 92) == 0x7fffffff; // not sure what these offsets are meant to represent (88 even overlaps with CVis_Hidden)
-}
-
-void CText_CreateTextLayout(BYTE* pThis) {
-    HRESULT hr = 0;
-    LPCWSTR string = *(LPCWSTR*)(pThis + CTxt_String);
-    TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
-    IDWriteTextLayout* textlayout = NULL;
-    IDWriteTextFormat* textformat = textex->textFormat;
-    LOGFONT font = *(LOGFONT*)(pThis + CTxt_Font);
-    if (string) {
-        int stringlength = wcslen(string);
-        DWRITE_TEXT_RANGE range = { 0, stringlength }; 
-        hr = dwritefactory->CreateTextLayout(string, stringlength, textformat, 0, 0, &textlayout);
-        if (hr < 0)
-            goto release;
-        hr = textlayout->SetStrikethrough(font.lfStrikeOut, range);
-        if (hr < 0)
-            goto release;
-        hr = textlayout->SetUnderline(font.lfUnderline, range);
-        if (hr < 0)
-            goto release;
-    }
-release:
-    if (hr >= 0) {
-        if (textex->textLayout)
-            textex->textLayout->Release();
-        textex->textLayout = textlayout;
-    }
-}
-
-void CText_CreateTextFormat(BYTE* pThis, LOGFONTW* font) {
-    HRESULT hr = 0;
-    IDWriteTextFormat* textformat;
-    IDWriteInlineObject* trimmingsign;
-    DWRITE_TRIMMING trimming;
-    TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
-
-    DWRITE_FONT_STYLE style = DWRITE_FONT_STYLE_NORMAL;
-    if (font->lfItalic)
-        style = DWRITE_FONT_STYLE_ITALIC;
-    float height = (float)-font->lfHeight;
-    if (height < 0) {
-        height = -height;
-    }
-    else if (height == 0) {
-        height = -(float)((*(LOGFONT*)(*CDM_pDesktopManagerInstance + CDM_CaptionFont)).lfHeight);
-    }
-    hr = dwritefactory->CreateTextFormat(
-        font->lfFaceName,
-        NULL,
-        (DWRITE_FONT_WEIGHT)font->lfWeight,
-        style,
-        DWRITE_FONT_STRETCH_NORMAL,
-        height,
-        L"en-us",
-        &textformat
-    );
-    if (hr < 0)
-        goto release;
-
-    textformat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-    hr = dwritefactory->CreateEllipsisTrimmingSign(textformat, &trimmingsign);
-    if (hr < 0)
-        goto release;
-    trimming = { DWRITE_TRIMMING_GRANULARITY_CHARACTER, NULL, 0 };
-    hr = textformat->SetTrimming(&trimming, trimmingsign);
-    if (hr < 0)
-        goto release;
-    /*if (CVisualFlags & CVIS_FLAG_RTL) {
-        hr = textformat->SetReadingDirection(DWRITE_READING_DIRECTION_RIGHT_TO_LEFT);
-        if (hr < 0)
-            goto release;
-    }
-
-    if (awmsettings.textAlignment == AWM_TEXT_CENTER_ICONBUTTONS) {
-        textformat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-    }
-    else if (awmsettings.textAlignment == AWM_TEXT_RIGHT) {
-        textformat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
-    }*/
-release:
-    if (hr >= 0) {
-        if (textex->textFormat)
-            textex->textFormat->Release();
-        textex->textFormat = textformat;
-        CText_CreateTextLayout(pThis);
-    }
-}
-
-long CText_SetText_Hook(BYTE* pThis, wchar_t* str) {
-    long hr = CText_SetText_orig(pThis, str);
-    TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
-    if (*(pThis + CTxt_ExFlag)) {
-        textex->render = true;
-        CText_CreateTextLayout(pThis);
-    }
-    return hr;
-}
-
-void CText_SetFont_Hook(BYTE* pThis, LOGFONTW* font) {
-    TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
-    if (memcmp((pThis + CTxt_Font), font, sizeof(LOGFONTW))) {
-        if (*(pThis + CTxt_ExFlag)) {
-            textex->render = true;
-            CText_CreateTextFormat(pThis, font);
-        }
-    }
-    CText_SetFont_orig(pThis, font);
 }
 
 long CDesktopManager_LoadTheme_Hook(BYTE* pThis) {
@@ -1342,30 +1199,6 @@ long CTLW_UpdateNCAreaPositionsAndSizes_Hook(BYTE* pThis) {
     return 0;
 }
 
-CText* CText_CText_Hook(BYTE* pThis) {
-    CText* textobj = CText_CText_orig(pThis);
-    TEXTEX* textex = (TEXTEX*)malloc(sizeof(TEXTEX));
-    ZeroMemory(textex, sizeof(TEXTEX));
-    *(TEXTEX**)((BYTE*)textobj + CTxt_Ex) = textex;
-    // This can be checked so that the object is created within various text-related functions.
-    *((BYTE*)textobj + CTxt_ExFlag) = true;
-    textex->render = true;
-    return textobj;
-}
-
-CText* CText_Destroy_Hook(BYTE* pThis, UINT someFlags) {
-    if (*((BYTE*)pThis + CTxt_ExFlag)) {
-        TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
-        if (textex->textFormat)
-            textex->textFormat->Release();
-        if (textex->textLayout)
-            textex->textLayout->Release();
-        free(*(TEXTEX**)(pThis + CTxt_Ex));
-    }
-    CText* textobj = CText_Destroy_orig(pThis, someFlags);
-    return textobj;
-}
-
 int CTLW_UpdateWindowVisuals_Hook(BYTE* pThis) {
     int rv = CTLW_UpdateWindowVisuals_orig(pThis);
     D2D1_COLOR_F color;
@@ -1421,435 +1254,6 @@ int CTLW_UpdateWindowVisuals_Hook(BYTE* pThis) {
     }
 
     return rv;
-}
-
-int CText_InitializeVisualTreeClone_Hook(BYTE* pThis, BYTE* pNew, UINT options) {
-    // The pointer to the TEXTEX struct is saved, as the function overwrites the pointer.
-    long long pSaved = *(long long*)(pNew + CTxt_Ex);
-    int rv = CText_InitializeVisualTreeClone_orig(pThis, pNew, options);
-    *(long long*)(pNew + CTxt_Ex) = pSaved; // reload the TEXTEX struct pointer into its position
-
-    if (*(BYTE*)(pThis + CTxt_ExFlag) == false) {
-        TEXTEX* textex = (TEXTEX*)malloc(sizeof(TEXTEX));
-        ZeroMemory(textex, sizeof(TEXTEX));
-        *(TEXTEX**)(pThis + CTxt_Ex) = textex;
-        *(pThis + CTxt_ExFlag) = true;
-        textex->render = true;
-    }
-    TEXTEX* textex1 = *(TEXTEX**)(pThis + CTxt_Ex);
-    TEXTEX* textex2 = *(TEXTEX**)(pNew + CTxt_Ex);
-    textex2->color = textex1->color;
-    textex2->shadowcolor = textex1->shadowcolor;
-    textex2->tbWidth = textex1->tbWidth;
-    textex2->glowopacity = textex1->glowopacity;
-    textex2->textInset = textex1->textInset;
-    //CopyMemory(textex2, textex1, sizeof(TEXTEX));
-    //textex2->textFormat = textex1->textFormat;
-    //textex2->textLayout = NULL;
-    //textex2->render = true;
-
-    return rv;
-}
-
-void CText_SetColor_Hook(BYTE* pThis, COLORREF color) {
-}
-
-void CText_SetBackgroundColor_Hook(BYTE* pThis, COLORREF color) {
-}
-
-int CText_ValidateResources_Hook(BYTE* pThis) {
-    int hr = 0;
-    DWORD* textFlags = (DWORD*)(pThis + CTxt_Flags);
-    BYTE* textFlags2 = (pThis + CTxt_Flags2);
-    DWORD CVisualFlags = *(pThis + CVis_SomeFlags);
-    if (*textFlags & CTXT_FLAG_UPDATE) {
-        LOGFONT font = *(LOGFONT*)(pThis + CTxt_Font);
-        RECT fillbox = { 0 };
-        D2D1_SIZE_F size = { 0 };
-        IWICImagingFactory* imagingfactory = *(IWICImagingFactory**)(*CDM_pDesktopManagerInstance + CDM_ImagingFactory);
-        IWICBitmap* bitmap{};
-        ID2D1RenderTarget* target{};
-        IMiosD2D1RenderTarget* miostarget{};
-        IDWriteTextFormat* textformat{};
-        IDWriteTextLayout* textlayout{};
-        ID2D1SolidColorBrush* textbrush{};
-        ID2D1SolidColorBrush* shadowbrush{};
-        IDWriteInlineObject* trimmingsign{};
-        ID2D1Bitmap* atlasbitmap{};
-        DWRITE_TEXT_METRICS metrics;
-        CCompositor* compositor = *(CCompositor**)(*CDM_pDesktopManagerInstance + CDM_Compositor);
-        CBaseTransformProxy* transformProxy = nullptr;
-        CBitmapSource* bmpsrc = nullptr;
-        CDrawImageInstruction* imageinstruction = nullptr;
-        CPushTransformInstruction* transforminstruction = nullptr;
-        CPopInstruction* popinstruction = nullptr;
-        HTHEME hTheme = *(HTHEME*)(*CDM_pDesktopManagerInstance + CDM_DWMWindowThemeData);
-        RECT atlasrect = { 0 };
-        MARGINS sizingmargins = { 0 };
-        MARGINS contentmargins = { 0 };
-        D2D1_RECT_F glowdrawrect = { 0 };
-        D2D1_RECT_F glowsrcrect = { 0 };
-        D2D1_SIZE_F glowscale = { 1, 1 };
-        bool glowsizechanged = false;
-
-        LPCWSTR string = *(LPCWSTR*)(pThis + CTxt_String);
-        TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
-        if (*(BYTE*)(pThis + CTxt_ExFlag) == false) {
-            TEXTEX* textex = (TEXTEX*)malloc(sizeof(TEXTEX));
-            ZeroMemory(textex, sizeof(TEXTEX));
-            *(TEXTEX**)(pThis + CTxt_Ex) = textex;
-            *(pThis + CTxt_ExFlag) = true;
-            textex->render = true;
-        }
-        fillbox.right = *(int*)(pThis + CVis_Width);
-        fillbox.bottom = *(int*)(pThis + CVis_Height);
-
-        if (fillbox.left != textex->fillboxSize.left ||
-            fillbox.top != textex->fillboxSize.top ||
-            fillbox.right != textex->fillboxSize.right ||
-            fillbox.bottom != textex->fillboxSize.bottom)
-            textex->render = true;
-        if (textex->render) {
-            CText_ReleaseResources(pThis);
-            if (fillbox.right > 0 && fillbox.bottom > 0) {
-                textex->fillboxSize = fillbox;
-
-                if (CVisualFlags & CVIS_FLAG_RTL) {
-                    //OffsetRect(&fillbox, -(fillbox.right), 0);
-                    //OffsetRect(&fillbox, -(textex->textInset.cxLeftWidth), 0);
-                    //textex->textInset.cxLeftWidth = 0;
-                }
-
-                if (string) {
-                    //int stringlength = wcslen(string);
-                    //DWRITE_TEXT_RANGE range = { 0, stringlength };
-
-                    hr = imagingfactory->CreateBitmap(
-                        fillbox.right - fillbox.left,
-                        fillbox.bottom - fillbox.top,
-                        GUID_WICPixelFormat32bppPBGRA,
-                        WICBitmapCacheOnDemand,
-                        &bitmap
-                    );
-                    if (hr < 0)
-                        goto release;
-
-                    D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT);
-                    hr = d2dfactory->CreateWicBitmapRenderTarget(bitmap, props, &target);
-                    if (hr < 0)
-                        goto release;
-
-                    size = target->GetSize();
-                    size.width -= (textex->textInset.cxLeftWidth + textex->textInset.cxRightWidth);
-                    if (size.width > 0) {
-
-                        /*D2D1_COLOR_F colorText = {
-                            awmsettings.colorTextActiveR,
-                            awmsettings.colorTextActiveG,
-                            awmsettings.colorTextActiveB,
-                            1.0f
-                        };*/
-                        D2D1_COLOR_F colorText = textex->color;
-                        hr = target->CreateSolidColorBrush(colorText, &textbrush);
-                        if (hr < 0)
-                            goto release;
-
-                        /*D2D1_COLOR_F colorShadow = {
-                            awmsettings.colorTextShadowActiveR,
-                            awmsettings.colorTextShadowActiveG,
-                            awmsettings.colorTextShadowActiveB,
-                            awmsettings.colorTextShadowActiveA
-                        };*/
-                        D2D1_COLOR_F colorShadow = textex->shadowcolor;
-                        hr = target->CreateSolidColorBrush(colorShadow, &shadowbrush);
-                        if (hr < 0)
-                            goto release;
-
-                        /*DWRITE_FONT_STYLE style = DWRITE_FONT_STYLE_NORMAL;
-                        if (font.lfItalic)
-                            style = DWRITE_FONT_STYLE_ITALIC;
-                        float height = (float)-font.lfHeight;
-                        if (height < 0) {
-                            height = -height;
-                        }
-                        else if (height == 0) {
-                            height = -(float)((*(LOGFONT*)(*CDM_pDesktopManagerInstance + CDM_CaptionFont)).lfHeight);
-                        }
-                        hr = dwritefactory->CreateTextFormat(
-                            font.lfFaceName,
-                            NULL,
-                            (DWRITE_FONT_WEIGHT)font.lfWeight,
-                            style,
-                            DWRITE_FONT_STRETCH_NORMAL,
-                            height,
-                            L"en-us",
-                            &textformat
-                        );
-                        if (hr < 0)
-                            goto release;
-
-                        textformat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-                        hr = dwritefactory->CreateEllipsisTrimmingSign(textformat, &trimmingsign);
-                        if (hr < 0)
-                            goto release;
-                        DWRITE_TRIMMING trimming = { DWRITE_TRIMMING_GRANULARITY_CHARACTER, NULL, 0 };
-                        hr = textformat->SetTrimming(&trimming, trimmingsign);
-                        if (hr < 0)
-                            goto release;
-                        if (CVisualFlags & CVIS_FLAG_RTL) {
-                            hr = textformat->SetReadingDirection(DWRITE_READING_DIRECTION_RIGHT_TO_LEFT);
-                            if (hr < 0)
-                                goto release;
-                        }
-
-                        if (awmsettings.textAlignment == AWM_TEXT_CENTER_ICONBUTTONS) {
-                            textformat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                        }
-                        else if (awmsettings.textAlignment == AWM_TEXT_RIGHT) {
-                            textformat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
-                        }*/
-                        if (!textex->textFormat) {
-                            CText_CreateTextFormat(pThis, &font);
-                        }
-                        textformat = textex->textFormat;
-                        textlayout = textex->textLayout;
-                        if (!textlayout)
-                            goto release;
-                        /*hr = dwritefactory->CreateTextLayout(string, stringlength, textformat, size.width, size.height, &textlayout);
-                        if (hr < 0)
-                            goto release;
-                        hr = textlayout->SetStrikethrough(font.lfStrikeOut, range);
-                        if (hr < 0)
-                            goto release;
-                        hr = textlayout->SetUnderline(font.lfUnderline, range);
-                        if (hr < 0)
-                            goto release;*/
-                        hr = textlayout->SetMaxWidth(size.width);
-                        if (hr < 0)
-                            goto release;
-                        hr = textlayout->SetMaxHeight(size.height);
-                        if (hr < 0)
-                            goto release;
-                        if (CVisualFlags & CVIS_FLAG_RTL) {
-                            hr = textlayout->SetReadingDirection(DWRITE_READING_DIRECTION_RIGHT_TO_LEFT);
-                            if (hr < 0)
-                                goto release;
-                        }
-
-                        if (awmsettings.textAlignment == AWM_TEXT_CENTER_ICONBUTTONS) {
-                            textlayout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-                        }
-                        else if (awmsettings.textAlignment == AWM_TEXT_RIGHT) {
-                            textlayout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
-                        }
-                        hr = textlayout->GetMetrics(&metrics);
-                        if (hr < 0)
-                            goto release;
-
-                        MARGINS insetFromParent = *(MARGINS*)(pThis + CVis_InsetFromParent);
-                        DWORD fullTBWidth = fillbox.right;
-
-                        // This fixes the bug described below:
-                        if (insetFromParent.cxLeftWidth == 0x7fffffff || insetFromParent.cxRightWidth == 0x7fffffff)
-                            fullTBWidth = textex->tbWidth;
-                        textex->tbWidth = fullTBWidth;
-
-                        float xoffset = 0.0f;
-                        float yoffset = (size.height - metrics.height - 1.5f) / 2.0f;
-                        if (awmsettings.textAlignment == AWM_TEXT_CENTER_W8) {
-                            xoffset = (float)floor((fullTBWidth - metrics.width) / 2.0f + 0.5f);
-
-                            // BUG! For some reason the inset is set to 0x7fffffff while minimizing. Make fullTBWidth 
-                            // be a property in the extra CText object that will be created, to avoid this issue, as 
-                            // it will be taken directly from the window itself (in UpdateNCAreaPositionsAndSizes)
-
-                            //xoffset -= (float)insetFromParent.cxLeftWidth;
-                            xoffset -= 1;
-                            xoffset -= textex->textInset.cxLeftWidth;
-                            if (xoffset < 0)
-                                xoffset = 0;
-                            if (xoffset + metrics.width >= size.width) {
-                                xoffset = (size.width - metrics.width) / 2.0f;
-
-                                textlayout->SetMaxWidth(fullTBWidth);
-                                DWRITE_TEXT_METRICS fullmetrics;
-                                textlayout->GetMetrics(&fullmetrics);
-                                if (size.width < fullmetrics.width) {
-                                    xoffset = 0.0f;
-                                }
-                                textlayout->SetMaxWidth(size.width);
-                            }
-                        }
-                        else if (awmsettings.textAlignment == AWM_TEXT_CENTER_DULAPPY) {
-                            xoffset = ((float)fullTBWidth - metrics.width) / 2.0f;
-                            //xoffset -= (float)insetFromParent.cxLeftWidth;
-                            xoffset -= 1;
-                            xoffset -= textex->textInset.cxLeftWidth;
-                            if (xoffset + metrics.width >= size.width)
-                                xoffset = size.width - metrics.width;
-                            if (xoffset < 0)
-                                xoffset = 0;
-                        }
-
-                        // Ensure that the update flag will be set every time the window is resized.
-                        *textFlags2 &= ~CTXT_FLAG2_TEXTCHANGED;
-                        // These two are now being used to store the CTextEx object's address.
-                        //*(DWORD*)(pThis + CTxt_LimRight) = 0;
-                        //*(DWORD*)(pThis + CTxt_LimBottom) = 0;
-
-                        hr = GetMiosThemeBitmapProps(
-                            hTheme,
-                            45,
-                            0,
-                            &atlasrect,
-                            &sizingmargins,
-                            &contentmargins,
-                            0,
-                            true
-                        );
-                        /*if (hr < 0)
-                            goto release;*/
-                        hr = target->CreateBitmapFromWicBitmap(DWMAtlas, &atlasbitmap);
-                        if (hr < 0)
-                            goto release;
-
-                        if (CVisualFlags & CVIS_FLAG_RTL) {
-                            xoffset = -xoffset;
-                            xoffset -= textex->textInset.cxLeftWidth;
-                        }
-                        else if (metrics.left < 0) {
-                            xoffset -= metrics.left;
-                        }
-                        glowsrcrect.left = atlasrect.left;
-                        glowsrcrect.top = atlasrect.top;
-                        glowsrcrect.right = atlasrect.right;
-                        glowsrcrect.bottom = atlasrect.bottom;
-
-                        glowdrawrect.left = xoffset - contentmargins.cxLeftWidth;
-                        glowdrawrect.right = xoffset + metrics.width + contentmargins.cxRightWidth;
-                        glowdrawrect.top = (int)(yoffset + 0.75f - (float)contentmargins.cyTopHeight);
-                        glowdrawrect.bottom = yoffset + metrics.height + contentmargins.cyBottomHeight;
-                        if (metrics.left > 0) {
-                            glowdrawrect.left += metrics.left;
-                            glowdrawrect.right += metrics.left;
-                        }
-                        if (glowdrawrect.bottom - glowdrawrect.top < sizingmargins.cyBottomHeight + sizingmargins.cyTopHeight) {
-                            float heightnew = sizingmargins.cyBottomHeight + sizingmargins.cyTopHeight;
-                            glowscale.height = (float)(glowdrawrect.bottom - glowdrawrect.top) / heightnew;
-                            glowdrawrect.bottom = glowdrawrect.top + heightnew;
-                            glowsizechanged = true;
-                        }
-                        if (glowdrawrect.right - glowdrawrect.left < sizingmargins.cxRightWidth + sizingmargins.cxLeftWidth) {
-                            float widthnew = sizingmargins.cxRightWidth + sizingmargins.cxLeftWidth;
-                            glowscale.width = (float)(glowdrawrect.right - glowdrawrect.left) / widthnew;
-                            glowdrawrect.right = glowdrawrect.left + widthnew;
-                            glowsizechanged = true;
-                        }
-
-                        target->BeginDraw();
-                        //fwprintf(stream, L"%i\n", insetFromParent.cxLeftWidth);
-                        D2D1_POINT_2F start = { xoffset , yoffset };
-                        D2D1_POINT_2F startshadow = start;
-                        startshadow.x += awmsettings.textShadowOffsetX;
-                        startshadow.y += awmsettings.textShadowOffsetY;
-
-                        D2D1_MATRIX_3X2_F trnsfrmmatrix = D2D1::Matrix3x2F::Translation(textex->textInset.cxLeftWidth, 0);
-                        target->SetTransform(trnsfrmmatrix);
-
-                        if (glowsizechanged) {
-                            D2D1_POINT_2F point = { glowdrawrect.left, glowdrawrect.top };
-                            D2D1_MATRIX_3X2_F sizematrix = D2D1::Matrix3x2F::Scale(glowscale, point);
-                            target->SetTransform(trnsfrmmatrix * sizematrix);
-                        }
-
-                        miostarget = (IMiosD2D1RenderTarget*)target;
-                        miostarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
-                        miostarget->DrawNineSliceBitmap(
-                            atlasbitmap,
-                            &glowdrawrect,
-                            textex->glowopacity,
-                            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-                            &glowsrcrect,
-                            &sizingmargins
-                        );
-                        miostarget->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-
-                        target->SetTransform(D2D1::Matrix3x2F::Scale(1, 1) * trnsfrmmatrix);
-
-                        miostarget->PushAxisAlignedClip({ 0, 0, size.width, size.height }, D2D1_ANTIALIAS_MODE_ALIASED);
-			target->SetTextAntialiasMode(awmsettings.textAntiAlias);
-                        target->DrawTextLayout(startshadow, textlayout, shadowbrush, D2D1_DRAW_TEXT_OPTIONS_NONE);
-                        target->DrawTextLayout(start, textlayout, textbrush, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
-			target->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_DEFAULT);
-                        miostarget->PopAxisAlignedClip();
-
-                        hr = target->EndDraw();
-                        if (hr < 0)
-                            goto release;
-
-                        /*transformProxy = *(CBaseTransformProxy**)(pThis + CTxt_TransformProxy);
-                        hr = CCompositor_CreateMatrixTransformProxy(compositor, &transformProxy);
-                        if (hr < 0)
-                            goto release;
-                        hr = CPushTransformInstruction_Create(transformProxy, &transforminstruction);
-                        if (hr < 0)
-                            goto release;
-                        hr = CRenderDataVisual_AddInstruction(pThis, transforminstruction);
-                        if (hr < 0)
-                            goto release;*/
-
-    #if TARGETBUILD == 19041 || TARGETBUILD == 18362
-                        hr = CBitmapSource_Create(bitmap, 0, &bmpsrc);
-    #elif TARGETBUILD == 17763
-                        BYTE* resource = *(BYTE**)(pThis + CTxt_Resource);
-                        hr = CBitmapSource_Create(bitmap, 0, *(IDwmChannel**)(resource + CResource_Channel), &bmpsrc);
-    #endif
-                        if (hr < 0)
-                            goto release;
-                        hr = CDrawImageInstruction_Create(bmpsrc, &fillbox, &imageinstruction);
-                        if (hr < 0)
-                            goto release;
-                        hr = CRenderDataVisual_AddInstruction(pThis, imageinstruction);
-                        if (hr < 0)
-                            goto release;
-
-                        /*hr = CPopInstruction_Create(&popinstruction);
-                        if (hr < 0)
-                            goto release;
-                        hr = CRenderDataVisual_AddInstruction(pThis, popinstruction);*/
-                    }
-                    textex->render = false;
-                }
-            }
-        }
-    release:
-        if (bitmap)
-            bitmap->Release();
-        if (target)
-            target->Release();
-        if (textbrush)
-            textbrush->Release();
-        if (shadowbrush)
-            shadowbrush->Release();
-        //if (textformat)
-        //    textformat->Release();
-        //if (textlayout)
-        //    textlayout->Release();
-        if (trimmingsign)
-            trimmingsign->Release();
-        if (atlasbitmap)
-            atlasbitmap->Release();
-        if (bmpsrc)
-            CBaseObject_Release(bmpsrc);
-        //if (transforminstruction)
-        //    CBaseObject_Release(transforminstruction);
-        if (imageinstruction)
-            CBaseObject_Release(imageinstruction);
-        //if (popinstruction)
-        //    CBaseObject_Release(popinstruction);
-    }
-    *textFlags &= ~CTXT_FLAG_UPDATE;
-    return hr;
 }
 
 float red = 0.0;
@@ -1957,11 +1361,6 @@ int HookFunctions() {
         (uintptr_t)addresses[9]
         );
 
-    CText_ValidateResources_orig = (CText_ValidateResources_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[12]
-        );
-
     CBitmapSource_Create = (CBitmapSource_Create_t)(
         (uintptr_t)hudwm +
         (uintptr_t)addresses[13]
@@ -1975,11 +1374,6 @@ int HookFunctions() {
     CRenderDataVisual_AddInstruction = (CRenderDataVisual_AddInstruction_t)(
         (uintptr_t)hudwm +
         (uintptr_t)addresses[15]
-        );
-
-    CText_ReleaseResources = (CText_ReleaseResources_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[16]
         );
 
     CBaseObject_Release = (CBaseObject_Release_t)(
@@ -2001,35 +1395,10 @@ int HookFunctions() {
         (uintptr_t)hudwm +
         (uintptr_t)addresses[20]
         );
-
-    CText_CText_orig = (CText_CText_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[21]
-        );
-
-    CText_SetColor_orig = (CText_SetColor_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[22]
-        );
-
-    CText_SetBackgroundColor_orig = (CText_SetBackgroundColor_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[23]
-        );
-
+		
     CTLW_UpdateWindowVisuals_orig = (CTLW_UpdateWindowVisuals_t)(
         (uintptr_t)hudwm +
         (uintptr_t)addresses[24]
-        );
-
-    CText_InitializeVisualTreeClone_orig = (CText_InitializeVisualTreeClone_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[25]
-        );
-
-    CText_Destroy_orig = (CText_Destroy_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[26]
         );
 
     CDesktopManager_LoadTheme_orig = (CDesktopManager_LoadTheme_t)(
@@ -2045,14 +1414,6 @@ int HookFunctions() {
         (uintptr_t)hudwm +
         (uintptr_t)addresses[29]
         );
-    CText_SetText_orig = (CText_SetText_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[30]
-        );
-    CText_SetFont_orig = (CText_SetFont_t)(
-        (uintptr_t)hudwm +
-        (uintptr_t)addresses[31]
-        );
 
     // Funchook stuff
     int rv = 0;
@@ -2060,31 +1421,7 @@ int HookFunctions() {
     if (rv) {
         return ERR_FH_INIT;
     }
-    rv = funchook_prepare(funchook, (void**)&CText_ValidateResources_orig, CText_ValidateResources_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    }
-    rv = funchook_prepare(funchook, (void**)&CText_CText_orig, CText_CText_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    }
-    rv = funchook_prepare(funchook, (void**)&CText_SetColor_orig, CText_SetColor_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    }
-    rv = funchook_prepare(funchook, (void**)&CText_SetBackgroundColor_orig, CText_SetBackgroundColor_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    }
     rv = funchook_prepare(funchook, (void**)&CTLW_UpdateWindowVisuals_orig, CTLW_UpdateWindowVisuals_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    }
-    rv = funchook_prepare(funchook, (void**)&CText_InitializeVisualTreeClone_orig, CText_InitializeVisualTreeClone_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    }
-    rv = funchook_prepare(funchook, (void**)&CText_Destroy_orig, CText_Destroy_Hook);
     if (rv) {
         return ERR_FH_INIT;
     }
@@ -2097,14 +1434,6 @@ int HookFunctions() {
         return ERR_FH_INIT;
     }
     rv = funchook_prepare(funchook, (void**)&CButton_SetVisualStates_orig, CButton_SetVisualStates_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    }
-    rv = funchook_prepare(funchook, (void**)&CText_SetText_orig, CText_SetText_Hook);
-    if (rv) {
-        return ERR_FH_INIT;
-    }
-    rv = funchook_prepare(funchook, (void**)&CText_SetFont_orig, CText_SetFont_Hook);
     if (rv) {
         return ERR_FH_INIT;
     }
