@@ -592,6 +592,8 @@ SetWindowRgnEx_t SetWindowRgnEx;
 typedef __int64 (*CRD_DrawSolidColorRectangle_t)(void* pThis, void* pDrawingContext, void* pDrawListEntryBuilder, char unk, MilRectF* rect, D3DCOLORVALUE* color);
 CRD_DrawSolidColorRectangle_t CRD_DrawSolidColorRectangle_orig;
 
+typedef int (*CText_ValidateResources_t)(CText* pThis);
+CText_ValidateResources_t CText_ValidateResources_orig;
 #if TARGETBUILD == 19041 || TARGETBUILD == 18362
 typedef int (*CBitmapSource_Create_t)(IWICBitmap* bitmap, MARGINS* margins, CBitmapSource** ppBitmapSource);
 #elif TARGETBUILD == 17763
@@ -1455,6 +1457,12 @@ void CText_SetColor_Hook(BYTE* pThis, COLORREF color) {
 void CText_SetBackgroundColor_Hook(BYTE* pThis, COLORREF color) {
 }
 
+long (*CText_ValidateResources_orig)(void* pThis);
+
+int CText_ValidateResources_Hook(BYTE* pThis) {
+long retvalue = CText_ValidateResources_orig(pThis);
+}
+
 float red = 0.0;
 float green = 0.0;
 float blue = 0.0;
@@ -1560,6 +1568,11 @@ int HookFunctions() {
         (uintptr_t)addresses[9]
         );
 
+    CText_ValidateResources_orig = (CText_ValidateResources_t)(
+        (uintptr_t)hudwm +
+        (uintptr_t)addresses[12]
+        );
+
     CBitmapSource_Create = (CBitmapSource_Create_t)(
         (uintptr_t)hudwm +
         (uintptr_t)addresses[13]
@@ -1655,6 +1668,10 @@ int HookFunctions() {
     // Funchook stuff
     int rv = 0;
     rv = funchook_prepare(funchook, (void**)&CTLW_UpdateNCAreaPositionsAndSizes_orig, CTLW_UpdateNCAreaPositionsAndSizes_Hook);
+    if (rv) {
+        return ERR_FH_INIT;
+    }
+    rv = funchook_prepare(funchook, (void**)&CText_ValidateResources_orig, CText_ValidateResources_Hook);
     if (rv) {
         return ERR_FH_INIT;
     }
