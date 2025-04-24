@@ -605,6 +605,9 @@ CDrawImageInstruction_Create_t CDrawImageInstruction_Create;
 typedef int (*CRenderDataVisual_AddInstruction_t)(CRenderDataVisual* pThis, CRenderDataInstruction* pInstruction);
 CRenderDataVisual_AddInstruction_t CRenderDataVisual_AddInstruction;
 
+typedef int (*CText_ReleaseResources_t)(CText* pThis);
+CText_ReleaseResources_t CText_ReleaseResources;
+
 typedef int (*CBaseObject_Release_t)(CBaseObject* pThis);
 CBaseObject_Release_t CBaseObject_Release;
 
@@ -620,8 +623,23 @@ CPopInstruction_Create_t CPopInstruction_Create;
 typedef int (*CCh_SolidColorLegacyMilBrushUpdate_t)(CChannel* pThis, int, double opacity, D3DCOLORVALUE*, UINT, UINT, UINT);
 CCh_SolidColorLegacyMilBrushUpdate_t CChannel_SolidColorLegacyMilBrushUpdate;
 
+typedef CText* (*CText_CText_t)(CText* pThis);
+CText_CText_t CText_CText_orig;
+
+typedef void (*CText_SetColor_t)(CText* pThis, COLORREF color);
+CText_SetColor_t CText_SetColor_orig;
+
+typedef void (*CText_SetBackgroundColor_t)(CText* pThis, COLORREF color);
+CText_SetBackgroundColor_t CText_SetBackgroundColor_orig;
+
 typedef int (*CTLW_UpdateWindowVisuals_t)(CTopLevelWindow* pThis);
 CTLW_UpdateWindowVisuals_t CTLW_UpdateWindowVisuals_orig;
+
+typedef int (*CText_InitializeVisualTreeClone_t)(CText* pThis, CText* pNew, UINT options);
+CText_InitializeVisualTreeClone_t CText_InitializeVisualTreeClone_orig;
+
+typedef CText* (*CText_Destroy_t)(CText* pThis, UINT someFlags);
+CText_Destroy_t CText_Destroy_orig;
 
 typedef long (*CDesktopManager_LoadTheme_t)(CDesktopManager* pThis);
 CDesktopManager_LoadTheme_t CDesktopManager_LoadTheme_orig;
@@ -631,6 +649,12 @@ CDesktopManager_UnloadTheme_t CDesktopManager_UnloadTheme_orig;
 
 typedef long (*CButton_SetVisualStates_t)(CButton* pThis, CBitmapSourceArray* array1, CBitmapSourceArray* array2, CBitmapSource* bmpsrc, float opacity);
 CButton_SetVisualStates_t CButton_SetVisualStates_orig;
+
+typedef long (*CText_SetText_t)(CText* pThis, wchar_t* str);
+CText_SetText_t CText_SetText_orig;
+
+typedef void (*CText_SetFont_t)(CText* pThis, LOGFONTW* font);
+CText_SetFont_t CText_SetFont_orig;
 
 // ===========================================================================
 //  FUNCTIONS
@@ -733,6 +757,114 @@ bool CTopLevelWindow_IsSheetOfGlass(BYTE* pThis) {
         && *(int*)(windowVisual + 84) == 0x7fffffff
         && *(int*)(windowVisual + 88) == 0x7fffffff
         && *(int*)(windowVisual + 92) == 0x7fffffff; // not sure what these offsets are meant to represent (88 even overlaps with CVis_Hidden)
+}
+
+void CText_CreateTextLayout(BYTE* pThis) {
+    HRESULT hr = 0;
+    LPCWSTR string = *(LPCWSTR*)(pThis + CTxt_String);
+    TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
+    IDWriteTextLayout* textlayout = NULL;
+    IDWriteTextFormat* textformat = textex->textFormat;
+    LOGFONT font = *(LOGFONT*)(pThis + CTxt_Font);
+    if (string) {
+        int stringlength = wcslen(string);
+        DWRITE_TEXT_RANGE range = { 0, stringlength }; 
+        hr = dwritefactory->CreateTextLayout(string, stringlength, textformat, 0, 0, &textlayout);
+        if (hr < 0)
+            goto release;
+        hr = textlayout->SetStrikethrough(font.lfStrikeOut, range);
+        if (hr < 0)
+            goto release;
+        hr = textlayout->SetUnderline(font.lfUnderline, range);
+        if (hr < 0)
+            goto release;
+    }
+release:
+    if (hr >= 0) {
+        if (textex->textLayout)
+            textex->textLayout->Release();
+        textex->textLayout = textlayout;
+    }
+}
+
+void CText_CreateTextFormat(BYTE* pThis, LOGFONTW* font) {
+    HRESULT hr = 0;
+    IDWriteTextFormat* textformat;
+    IDWriteInlineObject* trimmingsign;
+    DWRITE_TRIMMING trimming;
+    TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
+
+    DWRITE_FONT_STYLE style = DWRITE_FONT_STYLE_NORMAL;
+    if (font->lfItalic)
+        style = DWRITE_FONT_STYLE_ITALIC;
+    float height = (float)-font->lfHeight;
+    if (height < 0) {
+        height = -height;
+    }
+    else if (height == 0) {
+        height = -(float)((*(LOGFONT*)(*CDM_pDesktopManagerInstance + CDM_CaptionFont)).lfHeight);
+    }
+    hr = dwritefactory->CreateTextFormat(
+        font->lfFaceName,
+        NULL,
+        (DWRITE_FONT_WEIGHT)font->lfWeight,
+        style,
+        DWRITE_FONT_STRETCH_NORMAL,
+        height,
+        L"en-us",
+        &textformat
+    );
+    if (hr < 0)
+        goto release;
+
+    textformat->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    hr = dwritefactory->CreateEllipsisTrimmingSign(textformat, &trimmingsign);
+    if (hr < 0)
+        goto release;
+    trimming = { DWRITE_TRIMMING_GRANULARITY_CHARACTER, NULL, 0 };
+    hr = textformat->SetTrimming(&trimming, trimmingsign);
+    if (hr < 0)
+        goto release;
+    /*if (CVisualFlags & CVIS_FLAG_RTL) {
+        hr = textformat->SetReadingDirection(DWRITE_READING_DIRECTION_RIGHT_TO_LEFT);
+        if (hr < 0)
+            goto release;
+    }
+
+    if (awmsettings.textAlignment == AWM_TEXT_CENTER_ICONBUTTONS) {
+        textformat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    }
+    else if (awmsettings.textAlignment == AWM_TEXT_RIGHT) {
+        textformat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+    }*/
+release:
+    if (hr >= 0) {
+        if (textex->textFormat)
+            textex->textFormat->Release();
+        textex->textFormat = textformat;
+        CText_CreateTextLayout(pThis);
+    }
+}
+
+long CText_SetText_Hook(BYTE* pThis, wchar_t* str) {
+    long hr = CText_SetText_orig(pThis, str);
+    TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
+    if (*(pThis + CTxt_ExFlag)) {
+        textex->render = true;
+        CText_CreateTextLayout(pThis);
+    }
+    return hr;
+}
+
+void CText_SetFont_Hook(BYTE* pThis, LOGFONTW* font) {
+    TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
+    if (memcmp((pThis + CTxt_Font), font, sizeof(LOGFONTW))) {
+        if (*(pThis + CTxt_ExFlag)) {
+            textex->render = true;
+            CText_CreateTextFormat(pThis, font);
+        }
+    }
+    CText_SetFont_orig(pThis, font);
 }
 
 long CDesktopManager_LoadTheme_Hook(BYTE* pThis) {
@@ -1208,6 +1340,30 @@ long CTLW_UpdateNCAreaPositionsAndSizes_Hook(BYTE* pThis) {
     return 0;
 }
 
+CText* CText_CText_Hook(BYTE* pThis) {
+    CText* textobj = CText_CText_orig(pThis);
+    TEXTEX* textex = (TEXTEX*)malloc(sizeof(TEXTEX));
+    ZeroMemory(textex, sizeof(TEXTEX));
+    *(TEXTEX**)((BYTE*)textobj + CTxt_Ex) = textex;
+    // This can be checked so that the object is created within various text-related functions.
+    *((BYTE*)textobj + CTxt_ExFlag) = true;
+    textex->render = true;
+    return textobj;
+}
+
+CText* CText_Destroy_Hook(BYTE* pThis, UINT someFlags) {
+    if (*((BYTE*)pThis + CTxt_ExFlag)) {
+        TEXTEX* textex = *(TEXTEX**)(pThis + CTxt_Ex);
+        if (textex->textFormat)
+            textex->textFormat->Release();
+        if (textex->textLayout)
+            textex->textLayout->Release();
+        free(*(TEXTEX**)(pThis + CTxt_Ex));
+    }
+    CText* textobj = CText_Destroy_orig(pThis, someFlags);
+    return textobj;
+}
+
 int CTLW_UpdateWindowVisuals_Hook(BYTE* pThis) {
     int rv = CTLW_UpdateWindowVisuals_orig(pThis);
     D2D1_COLOR_F color;
@@ -1263,6 +1419,40 @@ int CTLW_UpdateWindowVisuals_Hook(BYTE* pThis) {
     }
 
     return rv;
+}
+
+int CText_InitializeVisualTreeClone_Hook(BYTE* pThis, BYTE* pNew, UINT options) {
+    // The pointer to the TEXTEX struct is saved, as the function overwrites the pointer.
+    long long pSaved = *(long long*)(pNew + CTxt_Ex);
+    int rv = CText_InitializeVisualTreeClone_orig(pThis, pNew, options);
+    *(long long*)(pNew + CTxt_Ex) = pSaved; // reload the TEXTEX struct pointer into its position
+
+    if (*(BYTE*)(pThis + CTxt_ExFlag) == false) {
+        TEXTEX* textex = (TEXTEX*)malloc(sizeof(TEXTEX));
+        ZeroMemory(textex, sizeof(TEXTEX));
+        *(TEXTEX**)(pThis + CTxt_Ex) = textex;
+        *(pThis + CTxt_ExFlag) = true;
+        textex->render = true;
+    }
+    TEXTEX* textex1 = *(TEXTEX**)(pThis + CTxt_Ex);
+    TEXTEX* textex2 = *(TEXTEX**)(pNew + CTxt_Ex);
+    textex2->color = textex1->color;
+    textex2->shadowcolor = textex1->shadowcolor;
+    textex2->tbWidth = textex1->tbWidth;
+    textex2->glowopacity = textex1->glowopacity;
+    textex2->textInset = textex1->textInset;
+    //CopyMemory(textex2, textex1, sizeof(TEXTEX));
+    //textex2->textFormat = textex1->textFormat;
+    //textex2->textLayout = NULL;
+    //textex2->render = true;
+
+    return rv;
+}
+
+void CText_SetColor_Hook(BYTE* pThis, COLORREF color) {
+}
+
+void CText_SetBackgroundColor_Hook(BYTE* pThis, COLORREF color) {
 }
 
 float red = 0.0;
@@ -1385,6 +1575,11 @@ int HookFunctions() {
         (uintptr_t)addresses[15]
         );
 
+    CText_ReleaseResources = (CText_ReleaseResources_t)(
+        (uintptr_t)hudwm +
+        (uintptr_t)addresses[16]
+        );
+
     CBaseObject_Release = (CBaseObject_Release_t)(
         (uintptr_t)hudwm +
         (uintptr_t)addresses[17]
@@ -1405,9 +1600,34 @@ int HookFunctions() {
         (uintptr_t)addresses[20]
         );
 
+    CText_CText_orig = (CText_CText_t)(
+        (uintptr_t)hudwm +
+        (uintptr_t)addresses[21]
+        );
+
+    CText_SetColor_orig = (CText_SetColor_t)(
+        (uintptr_t)hudwm +
+        (uintptr_t)addresses[22]
+        );
+
+    CText_SetBackgroundColor_orig = (CText_SetBackgroundColor_t)(
+        (uintptr_t)hudwm +
+        (uintptr_t)addresses[23]
+        );
+
     CTLW_UpdateWindowVisuals_orig = (CTLW_UpdateWindowVisuals_t)(
         (uintptr_t)hudwm +
         (uintptr_t)addresses[24]
+        );
+
+    CText_InitializeVisualTreeClone_orig = (CText_InitializeVisualTreeClone_t)(
+        (uintptr_t)hudwm +
+        (uintptr_t)addresses[25]
+        );
+
+    CText_Destroy_orig = (CText_Destroy_t)(
+        (uintptr_t)hudwm +
+        (uintptr_t)addresses[26]
         );
 
     CDesktopManager_LoadTheme_orig = (CDesktopManager_LoadTheme_t)(
@@ -1423,6 +1643,14 @@ int HookFunctions() {
         (uintptr_t)hudwm +
         (uintptr_t)addresses[29]
         );
+    CText_SetText_orig = (CText_SetText_t)(
+        (uintptr_t)hudwm +
+        (uintptr_t)addresses[30]
+        );
+    CText_SetFont_orig = (CText_SetFont_t)(
+        (uintptr_t)hudwm +
+        (uintptr_t)addresses[31]
+        );
 
     // Funchook stuff
     int rv = 0;
@@ -1430,7 +1658,27 @@ int HookFunctions() {
     if (rv) {
         return ERR_FH_INIT;
     }
+    rv = funchook_prepare(funchook, (void**)&CText_CText_orig, CText_CText_Hook);
+    if (rv) {
+        return ERR_FH_INIT;
+    }
+    rv = funchook_prepare(funchook, (void**)&CText_SetColor_orig, CText_SetColor_Hook);
+    if (rv) {
+        return ERR_FH_INIT;
+    }
+    rv = funchook_prepare(funchook, (void**)&CText_SetBackgroundColor_orig, CText_SetBackgroundColor_Hook);
+    if (rv) {
+        return ERR_FH_INIT;
+    }
     rv = funchook_prepare(funchook, (void**)&CTLW_UpdateWindowVisuals_orig, CTLW_UpdateWindowVisuals_Hook);
+    if (rv) {
+        return ERR_FH_INIT;
+    }
+    rv = funchook_prepare(funchook, (void**)&CText_InitializeVisualTreeClone_orig, CText_InitializeVisualTreeClone_Hook);
+    if (rv) {
+        return ERR_FH_INIT;
+    }
+    rv = funchook_prepare(funchook, (void**)&CText_Destroy_orig, CText_Destroy_Hook);
     if (rv) {
         return ERR_FH_INIT;
     }
@@ -1443,6 +1691,14 @@ int HookFunctions() {
         return ERR_FH_INIT;
     }
     rv = funchook_prepare(funchook, (void**)&CButton_SetVisualStates_orig, CButton_SetVisualStates_Hook);
+    if (rv) {
+        return ERR_FH_INIT;
+    }
+    rv = funchook_prepare(funchook, (void**)&CText_SetText_orig, CText_SetText_Hook);
+    if (rv) {
+        return ERR_FH_INIT;
+    }
+    rv = funchook_prepare(funchook, (void**)&CText_SetFont_orig, CText_SetFont_Hook);
     if (rv) {
         return ERR_FH_INIT;
     }
