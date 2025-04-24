@@ -65,17 +65,26 @@ LPCWSTR symNames[SYMBOLS_AMOUNT] = {
     CTLW_ValidateVisual_Name,
     CTLW_s_marMinInflationThickness_Name,
     CDM_s_pDesktopManagerInstance_Name,
+    CText_ValidateResources_Name,
     CBmpSrc_Create_WICBitmap_Name,
     CDII_Create_Name,
     CRDV_AddInstruction_Name,
+    CText_ReleaseResources_Name,
     CBaseObject_Release_Name,
     CCompositor_CreateMatrixTransformProxy_Name,
     CPushTransformInstruction_Create_Name,
     CPopInstruction_Create_Name,
+    CText_CText_Name,
+    CText_SetColor_Name,
+    CText_SetBackgroundColor_Name,
     CTLW_UpdateWindowVisuals_Name,
+    CText_InitializeVisualTreeClone_Name,
+    CText_Destroy_Name,
     CDesktopManager_LoadTheme_Name,
     CDesktopManager_UnloadTheme_Name,
     CButton_SetVisualStates_Name,
+    CText_SetText_Name,
+    CText_SetFont_Name
 };
 
 #if TARGETBUILD == 19041 || TARGETBUILD == 18362
@@ -1395,7 +1404,7 @@ int HookFunctions() {
         (uintptr_t)hudwm +
         (uintptr_t)addresses[20]
         );
-		
+
     CTLW_UpdateWindowVisuals_orig = (CTLW_UpdateWindowVisuals_t)(
         (uintptr_t)hudwm +
         (uintptr_t)addresses[24]
