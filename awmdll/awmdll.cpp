@@ -1457,10 +1457,11 @@ void CText_SetColor_Hook(BYTE* pThis, COLORREF color) {
 void CText_SetBackgroundColor_Hook(BYTE* pThis, COLORREF color) {
 }
 
-long (*CText_ValidateResources_orig)(void* pThis);
-
 int CText_ValidateResources_Hook(BYTE* pThis) {
-long retvalue = CText_ValidateResources_orig(pThis);
+	//return 0;
+	long retvalue = CText_ValidateResources_orig(pThis);
+    //long retvalue = 0;
+    return retvalue;
 }
 
 float red = 0.0;
